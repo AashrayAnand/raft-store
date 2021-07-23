@@ -1,16 +1,8 @@
-// Copyright 2015 The etcd Authors
-//
-// Licensed under the Apache License, Version 2.0 (the "License");
-// you may not use this file except in compliance with the License.
-// You may obtain a copy of the License at
-//
-//     http://www.apache.org/licenses/LICENSE-2.0
-//
-// Unless required by applicable law or agreed to in writing, software
-// distributed under the License is distributed on an "AS IS" BASIS,
-// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-// See the License for the specific language governing permissions and
-// limitations under the License.
+// Replicated State Machine
+
+// Based on raftexample key-value store provided by etcd
+// extended key value store to fully formed state machine, with
+// a defined API for providing a replicated bank app
 
 package main
 
@@ -37,18 +29,18 @@ type rsm struct {
 type Operation int
 
 const (
-	CreateUser = iota // create a new user with specified name and balance
-	DeleteUser = iota // delete an existing user with specfied name
-	Transfer   = iota // transact between two specified users a specified amount
-	Withdraw   = iota // withdraw a specified amount from an existing user
-	Deposit    = iota // deposit a specified amount to an existing user
+	CreateUser Operation = iota // create a new user with specified name and balance
+	DeleteUser           = iota // delete an existing user with specfied name
+	Transfer             = iota // transact between two specified users a specified amount
+	Withdraw             = iota // withdraw a specified amount from an existing user
+	Deposit              = iota // deposit a specified amount to an existing user
 )
 
 // an action on the state machine
 type action struct {
-	op     Operation // the operation type
+	Op     Operation // the Operation type
 	Source string    // the user to create/delete, or the source of a transaction
-	Target string    // for transactional operations, target of the transaction
+	Target string    // for transactional Operations, target of the transaction
 	Val    float32   // for Create, corresponding balance, for transactions, the amount to transfer
 }
 
@@ -91,7 +83,7 @@ func (s *rsm) Lookup(key string) (float32, bool) {
 func (s *rsm) ProposeDelete(user string) {
 	var buf bytes.Buffer
 
-	delAction := action{op: DeleteUser, Source: user}
+	delAction := action{Op: DeleteUser, Source: user}
 
 	if err := gob.NewEncoder(&buf).Encode(delAction); err != nil {
 		log.Fatal(err)
@@ -115,7 +107,7 @@ func (s *rsm) CommitDelete(user string) {
 func (s *rsm) ProposeTransfer(source string, target string, amount float32) {
 	var buf bytes.Buffer
 
-	txnAction := action{op: Transfer, Source: source, Target: target, Val: amount}
+	txnAction := action{Op: Transfer, Source: source, Target: target, Val: amount}
 
 	if err := gob.NewEncoder(&buf).Encode(txnAction); err != nil {
 		log.Fatal(err)
@@ -139,7 +131,7 @@ func (s *rsm) CommitTransfer(source string, target string, amount float32) {
 func (s *rsm) ProposeCreate(source string, amount float32) {
 	var buf bytes.Buffer
 
-	createAction := action{op: CreateUser, Source: source, Val: amount}
+	createAction := action{Op: CreateUser, Source: source, Val: amount}
 
 	if err := gob.NewEncoder(&buf).Encode(createAction); err != nil {
 		log.Fatal(err)
@@ -179,23 +171,26 @@ func (s *rsm) readCommits(commitC <-chan *commit, errorC <-chan error) {
 		// Apply the commit, determining the appropriate
 		// action based on the operation type of the decoded data
 		for _, data := range commit.data {
-			var dataKv action
+			var action action
 			dec := gob.NewDecoder(bytes.NewBufferString(data))
-			if err := dec.Decode(&dataKv); err != nil {
+			if err := dec.Decode(&action); err != nil {
 				log.Fatalf("raftstore: could not decode message (%v)", err)
 			} else {
-				log.Printf("raftstore: received %v", dataKv)
+				log.Printf("raftstore: received %v", action)
 			}
 
-			switch dataKv.op {
+			switch action.Op {
 			case CreateUser:
-				s.CommitCreate(dataKv.Source, dataKv.Val)
+				log.Printf("commiting create of %v", action)
+				s.CommitCreate(action.Source, action.Val)
 			case DeleteUser:
-				s.CommitDelete(dataKv.Source)
+				log.Printf("commiting delete of %v", action)
+				s.CommitDelete(action.Source)
 			case Transfer:
-				s.CommitTransfer(dataKv.Source, dataKv.Target, dataKv.Val)
+				log.Printf("commiting transfer of %v", action)
+				s.CommitTransfer(action.Source, action.Target, action.Val)
 			default:
-				log.Panicf("raftstore: unknown operation type %d", dataKv.op)
+				log.Panicf("raftstore: unknown operation type %d", action.Op)
 			}
 
 		}

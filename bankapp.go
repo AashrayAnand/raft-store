@@ -28,6 +28,14 @@ func (app *BankApp) CreateAccount(ctx *fiber.Ctx) error {
 	}
 }
 
+// Delete an new account with a given name
+func (app *BankApp) DeleteAccount(ctx *fiber.Ctx) error {
+	name := ctx.Params("name")
+	app.kvs.ProposeDelete(name)
+	log := fmt.Sprintf("Deleting account %s", name)
+	return ctx.SendString(log)
+}
+
 func (app *BankApp) GetBalance(ctx *fiber.Ctx) error {
 	name := ctx.Params("name")
 	value, ok := app.kvs.Lookup(name)
@@ -64,6 +72,9 @@ func (app *BankApp) AddRoutes() {
 	app.server.Get("/", (func(ctx *fiber.Ctx) error { return ctx.SendString("Hello World!") }))
 	// /Create/john/100 -> new bank account for john with initial balance of 100
 	app.server.Post("/Create/:name/:balance", app.CreateAccount)
+
+	// /Delete/John
+	app.server.Post("/Delete/:name", app.DeleteAccount)
 
 	// /Balance/john -> current balance of john
 	app.server.Get("/Balance/:name", app.GetBalance)
